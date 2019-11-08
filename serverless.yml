@@ -1,0 +1,108 @@
+# Step 1
+service: yourname-yoursurname-serverless-workshop
+
+frameworkVersion: ">=1.2.0 <2.0.0"
+
+custom:
+  s3Bucket: ${self:service}
+
+provider:
+  name: aws
+  runtime: nodejs8.10
+  region: eu-west-1
+
+# Step 2
+functions:
+  api:
+    handler: handler.api
+    events:
+      - http:
+          path: openapi
+          method: post
+          cors: true
+# Step 5
+  protectedApi:
+    handler: handler.api
+    events:
+      - http:
+          path: api
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: CognitoAuthorizer
+
+# Step 3
+resources:
+  Resources:
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}
+        AutoVerifiedAttributes:
+         - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 6
+            RequireLowercase: False
+            RequireNumbers: False
+            RequireSymbols: False
+            RequireUppercase: False
+    CognitoUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}
+        GenerateSecret: false
+        UserPoolId:
+          Ref: "CognitoUserPool"
+
+# Step 4
+    CognitoAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: CognitoAuthorizer
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        Type: COGNITO_USER_POOLS
+        ProviderARNs:
+          - Fn::GetAtt: [ CognitoUserPool, Arn ]
+        IdentitySource: method.request.header.Authorization
+        
+# Step 6
+    WebAppS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.s3Bucket}
+        AccessControl: PublicRead
+        WebsiteConfiguration:
+          IndexDocument: index.html
+          ErrorDocument: index.html
+    WebAppS3BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket:
+          Ref: WebAppS3Bucket
+        PolicyDocument:
+          Statement:
+            - Sid: PublicReadGetObject
+              Effect: Allow
+              Principal: "*"
+              Action:
+              - s3:GetObject
+              Resource: arn:aws:s3:::${self:custom.s3Bucket}/*
+
+# Step 7
+  Outputs:
+    CognitoUserPoolId:
+      Description: "Cognito User Pool ID"
+      Value:
+        Ref: "CognitoUserPool"
+    CognitoUserPoolClientId:
+      Description: "Cognito User Pool Client ID"
+      Value:
+        Ref: "CognitoUserPoolClient"
+    WebsiteBucket:
+      Description: "Bucket where to store"
+      Value:
+        Ref: "WebAppS3Bucket"
